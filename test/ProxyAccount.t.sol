@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test, console} from "forge-std/Test.sol";
 import {ProxyAccount} from "../src/ProxyAccount.sol";
 import {StrategyExecutor} from "../src/StrategyExecutor.sol";
+import {ProxyFactory} from "../src/ProxyFactory.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // Mock ERC20 contract for testing
@@ -166,8 +167,8 @@ contract ProxyAccountTest is Test {
         // Deploy ProxyAccount with all required constructor parameters
         proxyAccount = new ProxyAccount(
             address(this),              // owner
-            address(0),                 // strategy (dummy address for mock tests)
-            address(0),                 // papaya (dummy address for mock tests)
+            address(0),                 // strategy (dummy for mock tests)
+            address(0),                 // papaya (dummy for mock tests)
             address(mockUSDT),          // usdt
             address(mockUSDC),          // usdc
             address(mockAavePool),      // aavePool
@@ -176,26 +177,7 @@ contract ProxyAccountTest is Test {
             address(mockUniswapRouter)  // uniswapRouter
         );
         
-        // Deploy mainnet contracts for fork testing
-        mainnetProxyAccount = new ProxyAccount(
-            address(this),              // owner
-            address(mainnetStrategyExecutor), // strategy
-            address(0),                 // papaya (dummy address for mock tests)
-            POLYGON_USDT,               // usdt
-            POLYGON_USDC,               // usdc
-            POLYGON_AAVE_POOL,          // aavePool
-            POLYGON_AUSDT,              // aUsdt
-            POLYGON_AUSDC,              // aUsdc
-            POLYGON_UNISWAP_ROUTER      // uniswapRouter
-        );
-        
-        mainnetStrategyExecutor = new StrategyExecutor(
-            address(mainnetProxyAccount), // proxy
-            POLYGON_USDT,                 // USDT
-            POLYGON_USDC,                 // USDC
-            POLYGON_AAVE_POOL,            // Aave pool
-            POLYGON_UNISWAP_ROUTER        // Uniswap router
-        );
+        // Note: mainnetProxyAccount and mainnetStrategyExecutor will be deployed in testMainnetForkStrategy
     }
     
     function testOwnerIsSetCorrectly() public {
@@ -354,6 +336,37 @@ contract ProxyAccountTest is Test {
         uint256 blockNumber = block.number;
         console.log("Current block number:", blockNumber);
         require(blockNumber > 40000000, "Fork not working properly"); // Polygon should have high block numbers
+                
+        // Deploy ProxyFactory with strategy and papaya addresses
+        ProxyFactory factory = new ProxyFactory(
+            address(0),  // strategyExecutor
+            address(0),                 // papayaContract (dummy for test)
+            POLYGON_USDT,               // usdt
+            POLYGON_USDC,               // usdc
+            POLYGON_AAVE_POOL,          // aavePool
+            POLYGON_AUSDT,              // aUsdt
+            POLYGON_AUSDC,              // aUsdc
+            POLYGON_UNISWAP_ROUTER      // uniswapRouter
+        );
+        
+        // Call factory.createProxy() from address(this)
+        factory.createProxy();
+        
+        // Get the created proxy address
+        address proxyAddress = factory.proxies(address(this));
+        console.log("Created proxy address:", proxyAddress);
+        
+        // Instantiate ProxyAccount using that address
+        ProxyAccount proxy = ProxyAccount(proxyAddress);
+        
+        // Deploy StrategyExecutor with correct addresses
+        StrategyExecutor strategyExecutor = new StrategyExecutor(
+            proxyAddress,             // proxy will be set later via factory
+            POLYGON_USDT,           // USDT
+            POLYGON_USDC,           // USDC
+            POLYGON_AAVE_POOL,      // Aave pool
+            POLYGON_UNISWAP_ROUTER  // Uniswap router
+        );
         
         // Debug: Test if we can call balanceOf without deal first
         console.log("Testing USDT contract interface...");
@@ -367,7 +380,7 @@ contract ProxyAccountTest is Test {
         }
         
         // Test our ProxyAccount balance (should be 0 initially)
-        try IERC20(POLYGON_USDT).balanceOf(address(mainnetProxyAccount)) returns (uint256 balance) {
+        try IERC20(POLYGON_USDT).balanceOf(proxyAddress) returns (uint256 balance) {
             console.log("ProxyAccount initial USDT balance:", balance);
         } catch {
             console.log("ERROR: Cannot get ProxyAccount USDT balance");
@@ -378,10 +391,10 @@ contract ProxyAccountTest is Test {
         
         // Try deal function
         console.log("Attempting to deal USDT...");
-        deal(POLYGON_USDT, address(mainnetProxyAccount), testAmount);
+        deal(POLYGON_USDT, proxyAddress, testAmount);
         
         // Check if deal worked
-        uint256 proxyBalance = IERC20(POLYGON_USDT).balanceOf(address(mainnetProxyAccount));
+        uint256 proxyBalance = IERC20(POLYGON_USDT).balanceOf(proxyAddress);
         console.log("ProxyAccount USDT balance after deal:", proxyBalance);
         
         if (proxyBalance == 0) {
@@ -392,24 +405,24 @@ contract ProxyAccountTest is Test {
         
         assertEq(proxyBalance, testAmount, "Deal should have given USDT to ProxyAccount");
         
-        // Use the new approveToken function instead of executeStrategy
-        mainnetProxyAccount.approveToken(POLYGON_USDT, address(mainnetStrategyExecutor), testAmount);
+        // Use the approveToken function
+        proxy.approveToken(POLYGON_USDT, address(strategyExecutor), testAmount);
         
         // Get initial owner USDT balance
         uint256 initialOwnerBalance = IERC20(POLYGON_USDT).balanceOf(address(this));
         console.log("Initial owner USDT balance:", initialOwnerBalance);
         
         // Call runStrategy - this should execute the strategy
-        mainnetProxyAccount.runStrategy(address(mainnetStrategyExecutor), testAmount);
+        proxy.runStrategy(address(strategyExecutor), testAmount);
         
         // Verify that USDT was used from ProxyAccount
-        uint256 finalProxyBalance = IERC20(POLYGON_USDT).balanceOf(address(mainnetProxyAccount));
+        uint256 finalProxyBalance = IERC20(POLYGON_USDT).balanceOf(proxyAddress);
         console.log("ProxyAccount USDT balance after strategy:", finalProxyBalance);
         assertEq(finalProxyBalance, 0, "ProxyAccount should have used all USDT");
         
         // Verify that ProxyAccount received aTokens from the strategy
-        uint256 aUsdtBalance = IERC20(POLYGON_AUSDT).balanceOf(address(mainnetProxyAccount));
-        uint256 aUsdcBalance = IERC20(POLYGON_AUSDC).balanceOf(address(mainnetProxyAccount));
+        uint256 aUsdtBalance = IERC20(POLYGON_AUSDT).balanceOf(proxyAddress);
+        uint256 aUsdcBalance = IERC20(POLYGON_AUSDC).balanceOf(proxyAddress);
         
         console.log("aUSDT balance:", aUsdtBalance);
         console.log("aUSDC balance:", aUsdcBalance);
@@ -418,7 +431,7 @@ contract ProxyAccountTest is Test {
         assertGt(aUsdcBalance, 0, "ProxyAccount should have received aUSDC");
         
         // Call claim() to convert everything back to USDT
-        mainnetProxyAccount.claim();
+        proxy.claim();
         
         // Assert that the owner received some USDT balance at the end
         uint256 finalOwnerBalance = IERC20(POLYGON_USDT).balanceOf(address(this));
