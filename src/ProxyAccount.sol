@@ -3,6 +3,11 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+// Papaya interface
+interface IPapaya {
+    function withdraw(address token) external;
+}
+
 // Aave V3 IPool interface
 interface IPool {
     function withdraw(
@@ -37,6 +42,8 @@ interface ISwapRouter {
  */
 contract ProxyAccount {
     address public owner;
+    address public papaya;
+    address public strategy;
     
     // Protocol contract addresses (public variables)
     address public usdt;
@@ -50,7 +57,10 @@ contract ProxyAccount {
     uint24 public constant POOL_FEE = 500;
 
     /**
-     * @dev Sets the protocol addresses and owner to msg.sender
+     * @dev Sets the protocol addresses and owner
+     * @param _owner The address that will own this ProxyAccount
+     * @param _strategy The address of the strategy executor contract
+     * @param _papaya The address of the papaya contract
      * @param _usdt The USDT token address (Polygon: 0x3813e82e6f7098b9583FC0F33a962D02018B6803)
      * @param _usdc The USDC token address (Polygon: 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174)
      * @param _aavePool The Aave V3 Pool address (Polygon: 0x5345F03E4B7521c5346F3DdB464c898D5C0A2fB0)
@@ -59,6 +69,9 @@ contract ProxyAccount {
      * @param _uniswapRouter The Uniswap V3 SwapRouter address (Polygon: 0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45)
      */
     constructor(
+        address _owner,
+        address _strategy,
+        address _papaya,
         address _usdt,
         address _usdc,
         address _aavePool,
@@ -66,7 +79,9 @@ contract ProxyAccount {
         address _aUsdc,
         address _uniswapRouter
     ) {
-        owner = msg.sender;
+        owner = _owner;
+        strategy = _strategy;
+        papaya = _papaya;
         usdt = _usdt;
         usdc = _usdc;
         aavePool = _aavePool;
@@ -84,12 +99,21 @@ contract ProxyAccount {
     }
 
     /**
+     * @dev Transfers ownership of the contract to a new address
+     * @param newOwner The address of the new owner
+     */
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "ProxyAccount: new owner is the zero address");
+        owner = newOwner;
+    }
+
+    /**
      * @dev Executes a strategy by calling an external contract
-     * @param strategy The address of the strategy contract to call
+     * @param strategyContract The address of the strategy contract to call
      * @param data The calldata to send to the strategy contract
      */
-    function executeStrategy(address strategy, bytes memory data) public onlyOwner {
-        (bool success, ) = strategy.call(data);
+    function executeStrategy(address strategyContract, bytes memory data) public onlyOwner {
+        (bool success, ) = strategyContract.call(data);
         require(success, "ProxyAccount: strategy execution failed");
     }
 
@@ -114,12 +138,12 @@ contract ProxyAccount {
 
     /**
      * @dev Runs a strategy by encoding execute(uint256) call and executing it
-     * @param strategy The address of the strategy contract to call
+     * @param strategyContract The address of the strategy contract to call
      * @param amount The amount parameter to pass to the execute function
      */
-    function runStrategy(address strategy, uint256 amount) external onlyOwner {
+    function runStrategy(address strategyContract, uint256 amount) external onlyOwner {
         bytes memory callData = abi.encodeWithSignature("execute(uint256)", amount);
-        executeStrategy(strategy, callData);
+        executeStrategy(strategyContract, callData);
     }
 
     /**
@@ -168,5 +192,21 @@ contract ProxyAccount {
         if (totalUsdtBalance > 0) {
             IERC20(usdt).transfer(owner, totalUsdtBalance);
         }
+    }
+
+    /**
+     * @dev Sets the papaya contract address
+     * @param _papaya The address of the papaya contract
+     */
+    function setPapaya(address _papaya) external onlyOwner {
+        papaya = _papaya;
+    }
+
+    /**
+     * @dev Pulls tokens from the papaya contract
+     * @param token The address of the token to withdraw from papaya
+     */
+    function pullFromPapaya(address token) external onlyOwner {
+        IPapaya(papaya).withdraw(token);
     }
 } 

@@ -165,6 +165,9 @@ contract ProxyAccountTest is Test {
         
         // Deploy ProxyAccount with all required constructor parameters
         proxyAccount = new ProxyAccount(
+            address(this),              // owner
+            address(0),                 // strategy (dummy address for mock tests)
+            address(0),                 // papaya (dummy address for mock tests)
             address(mockUSDT),          // usdt
             address(mockUSDC),          // usdc
             address(mockAavePool),      // aavePool
@@ -175,6 +178,9 @@ contract ProxyAccountTest is Test {
         
         // Deploy mainnet contracts for fork testing
         mainnetProxyAccount = new ProxyAccount(
+            address(this),              // owner
+            address(mainnetStrategyExecutor), // strategy
+            address(0),                 // papaya (dummy address for mock tests)
             POLYGON_USDT,               // usdt
             POLYGON_USDC,               // usdc
             POLYGON_AAVE_POOL,          // aavePool
