@@ -169,6 +169,8 @@ contract ProxyAccountTest is Test {
             address(this),              // owner
             address(0),                 // strategy (dummy for mock tests)
             address(0),                 // papaya (dummy for mock tests)
+            address(0),                 // feeRecipient (dummy for mock tests)
+            0,                          // feeBps (0% for mock tests)
             address(mockUSDT),          // usdt
             address(mockUSDC),          // usdc
             address(mockAavePool),      // aavePool
@@ -336,11 +338,21 @@ contract ProxyAccountTest is Test {
         uint256 blockNumber = block.number;
         console.log("Current block number:", blockNumber);
         require(blockNumber > 40000000, "Fork not working properly"); // Polygon should have high block numbers
-                
-        // Deploy ProxyFactory with strategy and papaya addresses
-        ProxyFactory factory = new ProxyFactory(
+        
+        // Define test amount
+        uint256 testAmount = 100 * 10**6; // 100 USDT (6 decimals)
+        
+        // Real Papaya contract on Polygon
+        address PAPAYA = 0x444a597c2DcaDF71187b4c7034D73B8Fa80744E2;
+        
+        
+        // Deploy ProxyAccount with real Papaya integration
+        ProxyAccount proxy = new ProxyAccount(
+            address(this),              // owner
             address(0),  // strategyExecutor
-            address(0),                 // papayaContract (dummy for test)
+            PAPAYA,                     // papaya (real contract)
+            address(0),                 // feeRecipient (no fee for this test)
+            0,                          // feeBps (0% fee)
             POLYGON_USDT,               // usdt
             POLYGON_USDC,               // usdc
             POLYGON_AAVE_POOL,          // aavePool
@@ -348,97 +360,89 @@ contract ProxyAccountTest is Test {
             POLYGON_AUSDC,              // aUsdc
             POLYGON_UNISWAP_ROUTER      // uniswapRouter
         );
-        
-        // Call factory.createProxy() from address(this)
-        factory.createProxy();
-        
-        // Get the created proxy address
-        address proxyAddress = factory.proxies(address(this));
-        console.log("Created proxy address:", proxyAddress);
-        
-        // Instantiate ProxyAccount using that address
-        ProxyAccount proxy = ProxyAccount(proxyAddress);
-        
-        // Deploy StrategyExecutor with correct addresses
+
+        // Deploy StrategyExecutor
         StrategyExecutor strategyExecutor = new StrategyExecutor(
-            proxyAddress,             // proxy will be set later via factory
-            POLYGON_USDT,           // USDT
-            POLYGON_USDC,           // USDC
-            POLYGON_AAVE_POOL,      // Aave pool
-            POLYGON_UNISWAP_ROUTER  // Uniswap router
+            address(proxy),           // proxy
+            POLYGON_USDT,             // USDT
+            POLYGON_USDC,             // USDC
+            POLYGON_AAVE_POOL,        // Aave pool
+            POLYGON_UNISWAP_ROUTER    // Uniswap router
         );
         
-        // Debug: Test if we can call balanceOf without deal first
-        console.log("Testing USDT contract interface...");
+        console.log("ProxyAccount deployed at:", address(proxy));
+        console.log("Using real Papaya at:", PAPAYA);
         
-        // Try to get balance of a known address (should work even if balance is 0)
-        try IERC20(POLYGON_USDT).balanceOf(address(0)) returns (uint256 balance) {
-            console.log("USDT balanceOf works, zero address balance:", balance);
-        } catch {
-            console.log("ERROR: Cannot call balanceOf on USDT contract");
-            revert("USDT contract interface broken");
-        }
+        // Setup: Approve the Papaya contract to spend USDT from the test account
+        deal(POLYGON_USDT, address(this), testAmount);
+        IERC20(POLYGON_USDT).approve(PAPAYA, testAmount);
         
-        // Test our ProxyAccount balance (should be 0 initially)
-        try IERC20(POLYGON_USDT).balanceOf(proxyAddress) returns (uint256 balance) {
-            console.log("ProxyAccount initial USDT balance:", balance);
-        } catch {
-            console.log("ERROR: Cannot get ProxyAccount USDT balance");
-            revert("ProxyAccount USDT balance call failed");
-        }
+        // Call papaya.depositFor(address(proxy), POLYGON_USDT, testAmount)
+        // Using low-level call since we don't have the exact interface imported
+        (bool success, ) = PAPAYA.call(
+            abi.encodeWithSignature("depositFor(uint256,address,bool)", testAmount, address(proxy), false)
+        );
+        require(success, "Failed to deposit to Papaya");
         
-        uint256 testAmount = 100 * 10**6; // 100 USDT (6 decimals)
+        console.log("Deposited USDT to Papaya for proxy"); 
+
+        // Get the balance of the proxy in Papaya
+        (bool success1, bytes memory data) = PAPAYA.call(
+            abi.encodeWithSignature("users(address)", address(proxy))
+        );
+        require(success1, "Failed to get balance");
+        (int256 ppBalance, , , ) = abi.decode(data, (int256, int256, int256, uint256));
+
+        console.log("Step 1: Pulling USDT from Papaya...");
+        proxy.pullFromPapaya(uint256(ppBalance));
         
-        // Try deal function
-        console.log("Attempting to deal USDT...");
-        deal(POLYGON_USDT, proxyAddress, testAmount);
+        // Verify ProxyAccount received USDT from Papaya
+        uint256 proxyUsdtBalance = IERC20(POLYGON_USDT).balanceOf(address(proxy));
+        console.log("ProxyAccount USDT balance after pullFromPapaya:", proxyUsdtBalance);
+        assertGt(proxyUsdtBalance, 0, "ProxyAccount should have received USDT from Papaya");
         
-        // Check if deal worked
-        uint256 proxyBalance = IERC20(POLYGON_USDT).balanceOf(proxyAddress);
-        console.log("ProxyAccount USDT balance after deal:", proxyBalance);
+        // Approve the StrategyExecutor from the proxy
+        console.log("Step 2: Approving StrategyExecutor to spend USDT...");
+        proxy.approveToken(POLYGON_USDT, address(strategyExecutor), proxyUsdtBalance);
         
-        if (proxyBalance == 0) {
-            console.log("WARNING: deal() didn't work, trying alternative method");
-            // Skip the rest of the test for now
-            return;
-        }
+        // Verify allowance was set
+        uint256 allowance = IERC20(POLYGON_USDT).allowance(address(proxy), address(strategyExecutor));
+        console.log("StrategyExecutor allowance:", allowance);
+        assertEq(allowance, proxyUsdtBalance, "StrategyExecutor should have allowance to spend USDT");
         
-        assertEq(proxyBalance, testAmount, "Deal should have given USDT to ProxyAccount");
+        // Run the strategy via runStrategy(...)
+        console.log("Step 3: Running strategy...");
+        proxy.runStrategy(address(strategyExecutor), proxyUsdtBalance);
         
-        // Use the approveToken function
-        proxy.approveToken(POLYGON_USDT, address(strategyExecutor), testAmount);
+        // Assertions: Proxy should receive aUSDT and aUSDC tokens
+        uint256 finalProxyUsdtBalance = IERC20(POLYGON_USDT).balanceOf(address(proxy));
+        console.log("ProxyAccount USDT balance after strategy:", finalProxyUsdtBalance);
+        assertEq(finalProxyUsdtBalance, 0, "Proxy USDT balance should be 0 after run");
         
-        // Get initial owner USDT balance
+        // Proxy should hold aUSDT and aUSDC
+        uint256 aUsdtBalance = IERC20(POLYGON_AUSDT).balanceOf(address(proxy));
+        uint256 aUsdcBalance = IERC20(POLYGON_AUSDC).balanceOf(address(proxy));
+        
+        console.log("ProxyAccount aUSDT balance:", aUsdtBalance);
+        console.log("ProxyAccount aUSDC balance:", aUsdcBalance);
+        
+        assertGt(aUsdtBalance, 0, "ProxyAccount should hold aUSDT");
+        assertGt(aUsdcBalance, 0, "ProxyAccount should hold aUSDC");
+        
+        // Optionally check that claim() transfers funds to owner
+        console.log("Step 4: Testing claim functionality...");
         uint256 initialOwnerBalance = IERC20(POLYGON_USDT).balanceOf(address(this));
         console.log("Initial owner USDT balance:", initialOwnerBalance);
         
-        // Call runStrategy - this should execute the strategy
-        proxy.runStrategy(address(strategyExecutor), testAmount);
-        
-        // Verify that USDT was used from ProxyAccount
-        uint256 finalProxyBalance = IERC20(POLYGON_USDT).balanceOf(proxyAddress);
-        console.log("ProxyAccount USDT balance after strategy:", finalProxyBalance);
-        assertEq(finalProxyBalance, 0, "ProxyAccount should have used all USDT");
-        
-        // Verify that ProxyAccount received aTokens from the strategy
-        uint256 aUsdtBalance = IERC20(POLYGON_AUSDT).balanceOf(proxyAddress);
-        uint256 aUsdcBalance = IERC20(POLYGON_AUSDC).balanceOf(proxyAddress);
-        
-        console.log("aUSDT balance:", aUsdtBalance);
-        console.log("aUSDC balance:", aUsdcBalance);
-        
-        assertGt(aUsdtBalance, 0, "ProxyAccount should have received aUSDT");
-        assertGt(aUsdcBalance, 0, "ProxyAccount should have received aUSDC");
-        
-        // Call claim() to convert everything back to USDT
         proxy.claim();
         
-        // Assert that the owner received some USDT balance at the end
         uint256 finalOwnerBalance = IERC20(POLYGON_USDT).balanceOf(address(this));
         console.log("Final owner USDT balance:", finalOwnerBalance);
         assertGt(finalOwnerBalance, initialOwnerBalance, "Owner should have received USDT from claim");
         
-        // Log the results for debugging
-        console.log("USDT gained:", finalOwnerBalance - initialOwnerBalance);
+        // Log final aToken balances for visual check
+        console.log("=== Final Results ===");
+        console.log("USDT gained from strategy:", finalOwnerBalance - initialOwnerBalance);
+        console.log("Strategy executed successfully with real Papaya integration!");
     }
 } 

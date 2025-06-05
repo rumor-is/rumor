@@ -103,16 +103,7 @@ contract StrategyExecutor is LendingStrategy {
         // For now, this is a placeholder
     }
 
-    /**
-     * @dev Return estimated return for given amount and duration (can be a mock)
-     * @param _amount The amount of tokens to calculate yield for
-     * @param _duration The duration in seconds to calculate yield for
-     * @return The estimated yield/return amount
-     */
-    function getExpectedYield(uint256 _amount, uint256 _duration) external pure override returns (uint256) {
-        // Return 0 for now as requested
-        return 0;
-    }
+
 
     /**
      * @dev Executes the strategy:

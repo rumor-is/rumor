@@ -12,6 +12,10 @@ contract ProxyFactory {
     address public immutable strategyExecutor;
     address public immutable papayaContract;
     
+    // Fee configuration
+    address public immutable feeRecipient;
+    uint256 public immutable feeBps;
+    
     // Protocol addresses (immutable)
     address public immutable usdt;
     address public immutable usdc;
@@ -30,6 +34,8 @@ contract ProxyFactory {
      * @dev Constructor sets all required addresses for ProxyAccount deployment
      * @param _strategyExecutor The address of the StrategyExecutor contract
      * @param _papayaContract The address of the Papaya contract
+     * @param _feeRecipient The address that will receive fees
+     * @param _feeBps The fee in basis points (e.g. 200 = 2%)
      * @param _usdt The USDT token address
      * @param _usdc The USDC token address
      * @param _aavePool The Aave V3 Pool address
@@ -40,6 +46,8 @@ contract ProxyFactory {
     constructor(
         address _strategyExecutor,
         address _papayaContract,
+        address _feeRecipient,
+        uint256 _feeBps,
         address _usdt,
         address _usdc,
         address _aavePool,
@@ -49,6 +57,8 @@ contract ProxyFactory {
     ) {
         strategyExecutor = _strategyExecutor;
         papayaContract = _papayaContract;
+        feeRecipient = _feeRecipient;
+        feeBps = _feeBps;
         usdt = _usdt;
         usdc = _usdc;
         aavePool = _aavePool;
@@ -70,6 +80,8 @@ contract ProxyFactory {
             msg.sender,         // owner
             strategyExecutor,   // strategy
             papayaContract,     // papaya
+            feeRecipient,       // feeRecipient
+            feeBps,            // feeBps
             usdt,
             usdc,
             aavePool,

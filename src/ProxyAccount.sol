@@ -6,7 +6,9 @@ import "./LendingStrategy.sol";
 
 // Papaya interface
 interface IPapaya {
-    function withdraw(address token) external;
+    function withdraw(uint256 amount) external;
+    function withdrawTo(address to, uint256 amount) external;
+    // Add other functions you need from the real Papaya contract
 }
 
 // Aave V3 IPool interface
@@ -46,6 +48,13 @@ contract ProxyAccount {
     address public papaya;
     address public strategy;
     
+    // Fee configuration
+    address public feeRecipient;
+    uint256 public feeBps; // e.g. 200 = 2%
+    
+    // Investment tracking
+    mapping(address => uint256) public totalInvested;
+    
     // Protocol contract addresses (public variables)
     address public usdt;
     address public usdc;
@@ -62,6 +71,8 @@ contract ProxyAccount {
      * @param _owner The address that will own this ProxyAccount
      * @param _strategy The address of the strategy executor contract
      * @param _papaya The address of the papaya contract
+     * @param _feeRecipient The address that will receive fees
+     * @param _feeBps The fee in basis points (e.g. 200 = 2%)
      * @param _usdt The USDT token address (Polygon: 0x3813e82e6f7098b9583FC0F33a962D02018B6803)
      * @param _usdc The USDC token address (Polygon: 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174)
      * @param _aavePool The Aave V3 Pool address (Polygon: 0x5345F03E4B7521c5346F3DdB464c898D5C0A2fB0)
@@ -73,6 +84,8 @@ contract ProxyAccount {
         address _owner,
         address _strategy,
         address _papaya,
+        address _feeRecipient,
+        uint256 _feeBps,
         address _usdt,
         address _usdc,
         address _aavePool,
@@ -83,6 +96,8 @@ contract ProxyAccount {
         owner = _owner;
         strategy = _strategy;
         papaya = _papaya;
+        feeRecipient = _feeRecipient;
+        feeBps = _feeBps;
         usdt = _usdt;
         usdc = _usdc;
         aavePool = _aavePool;
@@ -143,7 +158,20 @@ contract ProxyAccount {
      * @param amount The amount parameter to pass to the run function
      */
     function runStrategy(address strategyContract, uint256 amount) external onlyOwner {
-        LendingStrategy(strategyContract).run(amount);
+        // Calculate fee
+        uint256 fee = (amount * feeBps) / 10000;
+        uint256 investmentAmount = amount - fee;
+        
+        // Transfer fee to fee recipient if fee > 0
+        if (fee > 0 && feeRecipient != address(0)) {
+            IERC20(usdt).transfer(feeRecipient, fee);
+        }
+        
+        // Run strategy with amount minus fee
+        LendingStrategy(strategyContract).run(investmentAmount);
+        
+        // Track investment amount for user
+        totalInvested[msg.sender] += investmentAmount;
     }
 
     /**
@@ -151,7 +179,20 @@ contract ProxyAccount {
      * @param amount The amount parameter to pass to the run function
      */
     function runDefaultStrategy(uint256 amount) external onlyOwner {
-        LendingStrategy(strategy).run(amount);
+        // Calculate fee
+        uint256 fee = (amount * feeBps) / 10000;
+        uint256 investmentAmount = amount - fee;
+        
+        // Transfer fee to fee recipient if fee > 0
+        if (fee > 0 && feeRecipient != address(0)) {
+            IERC20(usdt).transfer(feeRecipient, fee);
+        }
+        
+        // Run strategy with amount minus fee
+        LendingStrategy(strategy).run(investmentAmount);
+        
+        // Track investment amount for user
+        totalInvested[msg.sender] += investmentAmount;
     }
 
     /**
@@ -176,9 +217,7 @@ contract ProxyAccount {
      * @param duration The duration in seconds
      * @return The expected yield amount
      */
-    function getExpectedYield(address strategyContract, uint256 amount, uint256 duration) external view returns (uint256) {
-        return LendingStrategy(strategyContract).getExpectedYield(amount, duration);
-    }
+
 
     /**
      * @dev Claims all aUSDT and aUSDC from Aave, swaps USDC to USDT, and transfers total USDT to owner
@@ -238,9 +277,10 @@ contract ProxyAccount {
 
     /**
      * @dev Pulls tokens from the papaya contract
-     * @param token The address of the token to withdraw from papaya
+     * @param amount The amount of the token to pull
      */
-    function pullFromPapaya(address token) external onlyOwner {
-        IPapaya(papaya).withdraw(token);
+    function pullFromPapaya(uint256 amount) external onlyOwner {
+        require(papaya != address(0), "ProxyAccount: papaya not set");
+        IPapaya(papaya).withdraw(amount);
     }
 } 

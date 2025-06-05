@@ -19,11 +19,5 @@ abstract contract LendingStrategy {
      */
     function claim() external virtual;
     
-    /**
-     * @dev Return estimated return for given amount and duration (can be a mock)
-     * @param amount The amount of tokens to calculate yield for
-     * @param duration The duration in seconds to calculate yield for
-     * @return The estimated yield/return amount
-     */
-    function getExpectedYield(uint256 amount, uint256 duration) external view virtual returns (uint256);
+
 } 
