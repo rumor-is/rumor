@@ -345,14 +345,13 @@ contract ProxyAccountTest is Test {
         // Real Papaya contract on Polygon
         address PAPAYA = 0x444a597c2DcaDF71187b4c7034D73B8Fa80744E2;
         
-        
-        // Deploy ProxyAccount with real Papaya integration
+        // Deploy ProxyAccount with real Papaya integration and 1% fee
         ProxyAccount proxy = new ProxyAccount(
             address(this),              // owner
-            address(0),  // strategyExecutor
+            address(0),                 // strategyExecutor
             PAPAYA,                     // papaya (real contract)
-            address(0),                 // feeRecipient (no fee for this test)
-            0,                          // feeBps (0% fee)
+            address(0),               // feeRecipient
+            0,                        // feeBps (0% fee)
             POLYGON_USDT,               // usdt
             POLYGON_USDC,               // usdc
             POLYGON_AAVE_POOL,          // aavePool
@@ -409,7 +408,7 @@ contract ProxyAccountTest is Test {
         uint256 allowance = IERC20(POLYGON_USDT).allowance(address(proxy), address(strategyExecutor));
         console.log("StrategyExecutor allowance:", allowance);
         assertEq(allowance, proxyUsdtBalance, "StrategyExecutor should have allowance to spend USDT");
-        
+              
         // Run the strategy via runStrategy(...)
         console.log("Step 3: Running strategy...");
         proxy.runStrategy(address(strategyExecutor), proxyUsdtBalance);
@@ -444,5 +443,47 @@ contract ProxyAccountTest is Test {
         console.log("=== Final Results ===");
         console.log("USDT gained from strategy:", finalOwnerBalance - initialOwnerBalance);
         console.log("Strategy executed successfully with real Papaya integration!");
+    }
+
+    function testMainnetForkFees() public {
+        // Check fork
+        require(block.number > 40000000, "Fork not working properly");
+        
+        uint256 testAmount = 100 * 10**6; // 100 USDT
+        address PAPAYA = 0x444a597c2DcaDF71187b4c7034D73B8Fa80744E2;
+        address feeRecipient = 0x7bfc84257b6D818c4e49Eeb7B9422569154EE5a6;
+        
+        // Deploy ProxyAccount with 1% fee
+        ProxyAccount proxy = new ProxyAccount(
+            address(this), address(0), PAPAYA, feeRecipient, 100,
+            POLYGON_USDT, POLYGON_USDC, POLYGON_AAVE_POOL,
+            POLYGON_AUSDT, POLYGON_AUSDC, POLYGON_UNISWAP_ROUTER
+        );
+        
+        // Deploy StrategyExecutor  
+        StrategyExecutor strategyExecutor = new StrategyExecutor(
+            address(proxy), POLYGON_USDT, POLYGON_USDC,
+            POLYGON_AAVE_POOL, POLYGON_UNISWAP_ROUTER
+        );
+        
+        // Setup USDT in proxy (simplified)
+        deal(POLYGON_USDT, address(proxy), testAmount);
+        proxy.approveToken(POLYGON_USDT, address(strategyExecutor), testAmount);
+        
+        // Record fee recipient balance
+        uint256 feeBefore = IERC20(POLYGON_USDT).balanceOf(feeRecipient);
+        console.log("Fee recipient balance before runStrategy:", feeBefore);
+        
+        // Run strategy
+        proxy.runStrategy(address(strategyExecutor), testAmount);
+        
+        // Check fee was collected
+        uint256 feeAfter = IERC20(POLYGON_USDT).balanceOf(feeRecipient);
+        console.log("Fee recipient balance after runStrategy:", feeAfter);
+        uint256 expectedFee = testAmount * 100 / 10000; // 1%
+        
+        assertEq(feeAfter - feeBefore, expectedFee, "Fee should be exactly 1%");
+        console.log("Fee collected:", feeAfter - feeBefore);
+        console.log("Expected fee (1%):", expectedFee);
     }
 } 

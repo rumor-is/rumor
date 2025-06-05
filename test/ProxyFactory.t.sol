@@ -71,8 +71,8 @@ contract ProxyFactoryTest is Test {
     address constant MOCK_UNISWAP_ROUTER = 0x1000000000000000000000000000000000000006;
     
     // Fee configuration
-    address constant FEE_RECIPIENT = 0xfEE0000000000000000000000000000000000000;
-    uint256 constant FEE_BPS = 200; // 2%
+    address constant FEE_RECIPIENT = 0x7bfc84257b6D818c4e49Eeb7B9422569154EE5a6;
+    uint256 constant FEE_BPS = 100; // 1%
     
     function setUp() public {
         // Deploy mock contracts
@@ -200,8 +200,8 @@ contract ProxyFactoryTest is Test {
         mockUSDT.mint(proxyAddress, investmentAmount);
         
         // Calculate expected fee and investment
-        uint256 expectedFee = (investmentAmount * FEE_BPS) / 10000; // 2% of 1000 = 20 USDT
-        uint256 expectedInvestment = investmentAmount - expectedFee; // 980 USDT
+        uint256 expectedFee = (investmentAmount * FEE_BPS) / 10000; // 1% of 1000 = 10 USDT
+        uint256 expectedInvestment = investmentAmount - expectedFee; // 990 USDT
         
         // Get initial balances
         uint256 initialFeeRecipientBalance = mockUSDT.balanceOf(FEE_RECIPIENT);
@@ -234,8 +234,8 @@ contract ProxyFactoryTest is Test {
         mockUSDT.mint(proxyAddress, investmentAmount);
         
         // Calculate expected fee and investment
-        uint256 expectedFee = (investmentAmount * FEE_BPS) / 10000; // 2% of 500 = 10 USDT
-        uint256 expectedInvestment = investmentAmount - expectedFee; // 490 USDT
+        uint256 expectedFee = (investmentAmount * FEE_BPS) / 10000; // 1% of 500 = 5 USDT
+        uint256 expectedInvestment = investmentAmount - expectedFee; // 495 USDT
         
         // Get initial balances
         uint256 initialFeeRecipientBalance = mockUSDT.balanceOf(FEE_RECIPIENT);
