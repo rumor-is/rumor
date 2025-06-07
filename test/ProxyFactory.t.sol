@@ -56,7 +56,7 @@ contract ProxyFactoryTest is Test {
         assertEq(factory.uniswapRouter(), UNISWAP_ROUTER);
     }
 
-    function testShouldRevertWhenStrategyExecutorIsZero() public {
+    function testRevertsWhenStrategyExecutorIsZero() public {
         vm.expectRevert("ProxyFactory: strategyExecutor is zero address");
         new ProxyFactory(
             address(0), PAPAYA, FEE_RECIPIENT, FEE_BPS,
@@ -64,7 +64,7 @@ contract ProxyFactoryTest is Test {
         );
     }
 
-    function testShouldRevertWhenPapayaIsZero() public {
+    function testRevertsWhenPapayaIsZero() public {
         vm.expectRevert("ProxyFactory: papayaContract is zero address");
         new ProxyFactory(
             STRATEGY_EXECUTOR, address(0), FEE_RECIPIENT, FEE_BPS,
@@ -72,7 +72,7 @@ contract ProxyFactoryTest is Test {
         );
     }
 
-    function testShouldRevertWhenUsdtIsZero() public {
+    function testRevertsWhenUsdtIsZero() public {
         vm.expectRevert("ProxyFactory: USDT is zero address");
         new ProxyFactory(
             STRATEGY_EXECUTOR, PAPAYA, FEE_RECIPIENT, FEE_BPS,
@@ -80,7 +80,7 @@ contract ProxyFactoryTest is Test {
         );
     }
 
-    function testShouldRevertWhenFeeBpsExceedsMaximum() public {
+    function testRevertsWhenFeeBpsExceedsMaximum() public {
         vm.expectRevert("ProxyFactory: fee BPS cannot exceed 100%");
         new ProxyFactory(
             STRATEGY_EXECUTOR, PAPAYA, FEE_RECIPIENT, 10001, // > 100%
@@ -88,7 +88,7 @@ contract ProxyFactoryTest is Test {
         );
     }
 
-    function testShouldAllowZeroFeeRecipient() public {
+    function testAllowsZeroFeeRecipient() public {
         ProxyFactory factoryWithZeroFee = new ProxyFactory(
             STRATEGY_EXECUTOR, PAPAYA, address(0), 0,
             USDT, USDC, AAVE_POOL, AUSDT, AUSDC, UNISWAP_ROUTER
@@ -113,7 +113,7 @@ contract ProxyFactoryTest is Test {
         assertEq(proxy.feeBps(), FEE_BPS);
     }
 
-    function testShouldRevertWhenUserAlreadyHasProxy() public {
+    function testRevertsWhenUserAlreadyHasProxy() public {
         factory.createProxy();
         
         vm.expectRevert("ProxyFactory: user already has a proxy");

@@ -26,6 +26,10 @@ contract StrategyExecutor is LendingStrategy {
     address public immutable aavePool;
     address public immutable uniswapRouter;
 
+    // ============ Events ============
+    event StrategyExecuted(uint256 usdtAmount, uint256 usdcAmount);
+    event EmergencyWithdrawal(address indexed token, uint256 amount);
+
     // ============ Modifiers ============
     modifier onlyProxy() {
         require(msg.sender == proxy, "StrategyExecutor: caller is not the proxy");
@@ -78,6 +82,7 @@ contract StrategyExecutor is LendingStrategy {
      */
     function emergencyWithdraw(address token, uint256 amount) external onlyProxy {
         IERC20(token).safeTransfer(proxy, amount);
+        emit EmergencyWithdrawal(token, amount);
     }
 
     // ============ Internal Functions ============
@@ -105,6 +110,8 @@ contract StrategyExecutor is LendingStrategy {
 
         // Step 5: Deposit USDC to Aave USDC pool
         _depositToAave(usdcToken, usdcReceived, usdc);
+
+        emit StrategyExecuted(halfAmount, usdcReceived);
     }
 
     /**

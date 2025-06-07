@@ -7,6 +7,10 @@ import {StrategyExecutor} from "../src/StrategyExecutor.sol";
 import {ProxyFactory} from "../src/ProxyFactory.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+/**
+ * @title ProxyAccountTest
+ * @dev Test suite for ProxyAccount contract functionality
+ */
 contract ProxyAccountTest is Test {
     // ============ Constants ============
     address constant POLYGON_USDT = 0xc2132D05D31c914a87C6611C10748AEb04B58e8F;
@@ -31,13 +35,11 @@ contract ProxyAccountTest is Test {
     MockUniswapRouter public mockUniswapRouter;
 
     function setUp() public {
-        // Deploy mock tokens and protocols for unit tests
         _deployMockContracts();
         
-        // Deploy ProxyAccount with mock addresses
         proxy = new ProxyAccount(
             address(this),              // owner
-            address(0),                 // strategy (set later)
+            address(0),                 // strategy
             address(0),                 // papaya
             address(0),                 // feeRecipient
             0,                          // feeBps
@@ -110,7 +112,7 @@ contract ProxyAccountTest is Test {
         assertEq(mockToken.balanceOf(address(proxy)), 0);
     }
 
-    function testShouldRevertWhenStrategyExecutionFails() public {
+    function testRevertsWhenStrategyExecutionFails() public {
         bytes memory invalidData = abi.encodeWithSignature("nonExistentFunction()");
         
         vm.expectRevert("ProxyAccount: strategy execution failed");
@@ -129,7 +131,6 @@ contract ProxyAccountTest is Test {
         uint256 testAmount = 1000 * 10**6;
         mockUSDT.mint(address(proxy), testAmount);
         
-        // Approve strategy to spend USDT
         bytes memory approveData = abi.encodeWithSignature(
             "approve(address,uint256)", 
             address(strategy), 
@@ -156,7 +157,7 @@ contract ProxyAccountTest is Test {
         
         proxy.claim();
         
-        uint256 expectedTotal = aUsdtAmount + aUsdcAmount; // 1:1 swap
+        uint256 expectedTotal = aUsdtAmount + aUsdcAmount;
         assertEq(
             mockUSDT.balanceOf(address(this)), 
             initialOwnerBalance + expectedTotal
@@ -214,7 +215,6 @@ contract ProxyAccountTest is Test {
         ProxyAccount mainnetProxy = _deployMainnetProxy(address(this));
         StrategyExecutor mainnetStrategy = _deployMainnetStrategy(address(mainnetProxy));
         
-        // Test full flow: deposit to Papaya -> pull -> run strategy -> claim
         _testFullMainnetFlow(mainnetProxy, mainnetStrategy);
     }
 
@@ -236,7 +236,6 @@ contract ProxyAccountTest is Test {
         );
         
         deal(POLYGON_USDT, address(feeProxy), TEST_AMOUNT);
-        vm.prank(address(this));
         feeProxy.approveToken(POLYGON_USDT, address(feeStrategy), TEST_AMOUNT);
         
         uint256 feeBefore = IERC20(POLYGON_USDT).balanceOf(feeRecipient);

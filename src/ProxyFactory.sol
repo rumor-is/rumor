@@ -37,7 +37,7 @@ contract ProxyFactory {
      * @param _strategyExecutor The address of the StrategyExecutor contract
      * @param _papayaContract The address of the Papaya contract
      * @param _feeRecipient The address that will receive fees
-     * @param _feeBps The fee in basis points (e.g. 200 = 2%)
+     * @param _feeBps The fee in basis points (e.g. 100 = 1%)
      * @param _usdt The USDT token address
      * @param _usdc The USDC token address
      * @param _aavePool The Aave V3 Pool address
@@ -69,7 +69,6 @@ contract ProxyFactory {
         
         // Validate fee parameters
         require(_feeBps <= MAX_FEE_BPS, "ProxyFactory: fee BPS cannot exceed 100%");
-        // Note: _feeRecipient can be zero address if no fees are intended
         
         strategyExecutor = _strategyExecutor;
         papayaContract = _papayaContract;
