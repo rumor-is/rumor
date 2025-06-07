@@ -55,6 +55,20 @@ contract ProxyFactory {
         address _aUsdc,
         address _uniswapRouter
     ) {
+        // Validate non-zero addresses for critical components
+        require(_strategyExecutor != address(0), "ProxyFactory: strategyExecutor is zero address");
+        require(_papayaContract != address(0), "ProxyFactory: papayaContract is zero address");
+        require(_usdt != address(0), "ProxyFactory: USDT is zero address");
+        require(_usdc != address(0), "ProxyFactory: USDC is zero address");
+        require(_aavePool != address(0), "ProxyFactory: aavePool is zero address");
+        require(_aUsdt != address(0), "ProxyFactory: aUSDT is zero address");
+        require(_aUsdc != address(0), "ProxyFactory: aUSDC is zero address");
+        require(_uniswapRouter != address(0), "ProxyFactory: uniswapRouter is zero address");
+        
+        // Validate fee parameters
+        require(_feeBps <= 10000, "ProxyFactory: fee BPS cannot exceed 100%");
+        // Note: _feeRecipient can be zero address if no fees are intended
+        
         strategyExecutor = _strategyExecutor;
         papayaContract = _papayaContract;
         feeRecipient = _feeRecipient;

@@ -523,13 +523,14 @@ contract ProxyAccountTest is Test {
         
         // Create and execute meta-transaction
         bytes memory data = abi.encodeWithSignature("runStrategy(address,uint256)", address(strategy), 100 * 10**6);
-        bytes32 hash = keccak256(abi.encodePacked(address(proxy), data, nonceBefore));
+        uint256 deadline = block.timestamp + 3600; // 1 hour deadline
+        bytes32 hash = keccak256(abi.encodePacked(address(proxy), data, nonceBefore, deadline));
         bytes32 msgHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
         
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, msgHash);
         console.log("Meta-transaction signed");
         
-        proxy.executeMetaTx(data, abi.encodePacked(r, s, v));
+        proxy.executeMetaTx(data, abi.encodePacked(r, s, v), deadline);
         console.log("Meta-transaction executed!");
         
         // Verify results
