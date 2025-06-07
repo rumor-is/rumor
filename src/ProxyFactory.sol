@@ -5,18 +5,19 @@ import "./ProxyAccount.sol";
 
 /**
  * @title ProxyFactory
- * @dev A factory contract for creating ProxyAccount instances
+ * @dev Factory contract for creating ProxyAccount instances
  */
 contract ProxyFactory {
-    // Immutable state variables
+    // ============ Constants ============
+    uint256 public constant MAX_FEE_BPS = 10000; // 100%
+
+    // ============ Immutable Variables ============
     address public immutable strategyExecutor;
     address public immutable papayaContract;
-    
-    // Fee configuration
     address public immutable feeRecipient;
     uint256 public immutable feeBps;
     
-    // Protocol addresses (immutable)
+    // Protocol addresses
     address public immutable usdt;
     address public immutable usdc;
     address public immutable aavePool;
@@ -24,14 +25,15 @@ contract ProxyFactory {
     address public immutable aUsdc;
     address public immutable uniswapRouter;
     
-    // Mapping to track user proxies
+    // ============ State Variables ============
     mapping(address => address) public proxies;
     
-    // Events
-    event ProxyCreated(address indexed user, address proxy);
+    // ============ Events ============
+    event ProxyCreated(address indexed user, address indexed proxy);
     
+    // ============ Constructor ============
     /**
-     * @dev Constructor sets all required addresses for ProxyAccount deployment
+     * @dev Initializes the factory with required addresses for ProxyAccount deployment
      * @param _strategyExecutor The address of the StrategyExecutor contract
      * @param _papayaContract The address of the Papaya contract
      * @param _feeRecipient The address that will receive fees
@@ -55,7 +57,7 @@ contract ProxyFactory {
         address _aUsdc,
         address _uniswapRouter
     ) {
-        // Validate non-zero addresses for critical components
+        // Validate critical addresses
         require(_strategyExecutor != address(0), "ProxyFactory: strategyExecutor is zero address");
         require(_papayaContract != address(0), "ProxyFactory: papayaContract is zero address");
         require(_usdt != address(0), "ProxyFactory: USDT is zero address");
@@ -66,7 +68,7 @@ contract ProxyFactory {
         require(_uniswapRouter != address(0), "ProxyFactory: uniswapRouter is zero address");
         
         // Validate fee parameters
-        require(_feeBps <= 10000, "ProxyFactory: fee BPS cannot exceed 100%");
+        require(_feeBps <= MAX_FEE_BPS, "ProxyFactory: fee BPS cannot exceed 100%");
         // Note: _feeRecipient can be zero address if no fees are intended
         
         strategyExecutor = _strategyExecutor;
@@ -81,15 +83,14 @@ contract ProxyFactory {
         uniswapRouter = _uniswapRouter;
     }
     
+    // ============ External Functions ============
     /**
      * @dev Creates a new ProxyAccount for the caller
-     * @return The address of the newly created ProxyAccount
+     * @return proxyAddress The address of the newly created ProxyAccount
      */
-    function createProxy() external returns (address) {
-        // Check that user doesn't already have a proxy
+    function createProxy() external returns (address proxyAddress) {
         require(proxies[msg.sender] == address(0), "ProxyFactory: user already has a proxy");
         
-        // Deploy new ProxyAccount
         ProxyAccount newProxy = new ProxyAccount(
             msg.sender,         // owner
             strategyExecutor,   // strategy
@@ -104,12 +105,18 @@ contract ProxyFactory {
             uniswapRouter
         );
         
-        // Store the proxy address in mapping
-        proxies[msg.sender] = address(newProxy);
+        proxyAddress = address(newProxy);
+        proxies[msg.sender] = proxyAddress;
         
-        // Emit event
-        emit ProxyCreated(msg.sender, address(newProxy));
-        
-        return address(newProxy);
+        emit ProxyCreated(msg.sender, proxyAddress);
+    }
+
+    /**
+     * @dev Returns the proxy address for a given user
+     * @param user The user address to check
+     * @return The proxy address (zero address if none exists)
+     */
+    function getProxy(address user) external view returns (address) {
+        return proxies[user];
     }
 } 

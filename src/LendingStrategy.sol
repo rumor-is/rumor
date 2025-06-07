@@ -8,16 +8,8 @@ pragma solidity ^0.8.20;
 abstract contract LendingStrategy {
     
     /**
-     * @dev Invest amount of token according to strategy
+     * @dev Executes the lending strategy with the specified amount
      * @param amount The amount of tokens to invest in the strategy
      */
     function run(uint256 amount) external virtual;
-    
-    /**
-     * @dev Convert strategy result back into base token (e.g. USDT)
-     * Withdraws all positions and converts everything back to the base token
-     */
-    function claim() external virtual;
-    
-
 } 
