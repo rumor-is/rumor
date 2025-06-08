@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title ProxyAccountTest
- * @dev Test suite for ProxyAccount contract functionality
+ * @dev Test suite for ProxyAccount contract functionality with shared StrategyExecutor
  */
 contract ProxyAccountTest is Test {
     // ============ Constants ============
@@ -25,7 +25,7 @@ contract ProxyAccountTest is Test {
     
     // ============ Test Contracts ============
     ProxyAccount public proxy;
-    StrategyExecutor public strategy;
+    StrategyExecutor public sharedStrategy;
     MockERC20 public mockToken;
     MockERC20 public mockUSDT;
     MockERC20 public mockUSDC;
@@ -37,18 +37,27 @@ contract ProxyAccountTest is Test {
     function setUp() public {
         _deployMockContracts();
         
+        // Deploy shared strategy executor first
+        sharedStrategy = new StrategyExecutor(
+            address(mockUSDT),
+            address(mockUSDC),  
+            address(mockAavePool),
+            address(mockUniswapRouter)
+        );
+        
+        // Deploy proxy account with shared strategy
         proxy = new ProxyAccount(
-            address(this),              // owner
-            address(0),                 // strategy
-            address(0),                 // papaya
-            address(0),                 // feeRecipient
-            0,                          // feeBps
-            address(mockUSDT),          // usdt
-            address(mockUSDC),          // usdc
-            address(mockAavePool),      // aavePool
-            address(mockAUSDT),         // aUsdt
-            address(mockAUSDC),         // aUsdc
-            address(mockUniswapRouter)  // uniswapRouter
+            address(this),                  // owner
+            address(sharedStrategy),        // strategy
+            address(0),                     // papaya
+            address(0),                     // feeRecipient
+            0,                              // feeBps
+            address(mockUSDT),              // usdt
+            address(mockUSDC),              // usdc
+            address(mockAavePool),          // aavePool
+            address(mockAUSDT),             // aUsdt
+            address(mockAUSDC),             // aUsdc
+            address(mockUniswapRouter)      // uniswapRouter
         );
     }
 
@@ -79,6 +88,14 @@ contract ProxyAccountTest is Test {
         vm.prank(notOwner);
         vm.expectRevert("ProxyAccount: caller is not the owner");
         proxy.claim();
+    }
+
+    function testOnlyOwnerCanRunStrategy() public {
+        address notOwner = address(0x123);
+        
+        vm.prank(notOwner);
+        vm.expectRevert("ProxyAccount: caller is not the owner");
+        proxy.runStrategy(address(sharedStrategy), TEST_AMOUNT);
     }
 
     // ============ Token Transfer Tests ============
@@ -119,28 +136,42 @@ contract ProxyAccountTest is Test {
         proxy.executeStrategy(address(mockToken), invalidData);
     }
 
-    function testRunStrategyWithMockContracts() public {
-        strategy = new StrategyExecutor(
-            address(proxy),
-            address(mockUSDT),
-            address(mockUSDC),
-            address(mockAavePool),
-            address(mockUniswapRouter)
-        );
-        
+    function testRunStrategyWithSharedExecutor() public {
         uint256 testAmount = 1000 * 10**6;
         mockUSDT.mint(address(proxy), testAmount);
         
+        // Approve the shared strategy to spend USDT
         bytes memory approveData = abi.encodeWithSignature(
             "approve(address,uint256)", 
-            address(strategy), 
+            address(sharedStrategy), 
             testAmount
         );
         proxy.executeStrategy(address(mockUSDT), approveData);
         
-        proxy.runStrategy(address(strategy), testAmount);
+        // Run strategy using shared executor
+        proxy.runStrategy(address(sharedStrategy), testAmount);
         
+        // Verify USDT was transferred from proxy
         assertEq(mockUSDT.balanceOf(address(proxy)), 0);
+    }
+
+    function testRunStrategyEmitsCorrectEvents() public {
+        uint256 testAmount = 1000 * 10**6;
+        mockUSDT.mint(address(proxy), testAmount);
+        
+        // Approve the shared strategy
+        bytes memory approveData = abi.encodeWithSignature(
+            "approve(address,uint256)", 
+            address(sharedStrategy), 
+            testAmount
+        );
+        proxy.executeStrategy(address(mockUSDT), approveData);
+        
+        // Expect StrategyExecuted event with proxy parameter
+        vm.expectEmit(true, false, false, false);
+        emit StrategyExecuted(address(proxy), testAmount / 2, testAmount / 2);
+        
+        proxy.runStrategy(address(sharedStrategy), testAmount);
     }
 
     // ============ Claim Tests ============
@@ -155,6 +186,9 @@ contract ProxyAccountTest is Test {
         
         uint256 initialOwnerBalance = mockUSDT.balanceOf(address(this));
         
+        vm.expectEmit(false, false, false, false);
+        emit ClaimExecuted(aUsdtAmount, aUsdcAmount);
+        
         proxy.claim();
         
         uint256 expectedTotal = aUsdtAmount + aUsdcAmount;
@@ -166,14 +200,35 @@ contract ProxyAccountTest is Test {
         assertEq(mockAUSDC.balanceOf(address(proxy)), 0);
     }
 
+    function testClaimWithNoYields() public {
+        uint256 initialOwnerBalance = mockUSDT.balanceOf(address(this));
+        
+        vm.expectEmit(false, false, false, false);
+        emit ClaimExecuted(0, 0);
+        
+        proxy.claim();
+        
+        assertEq(mockUSDT.balanceOf(address(this)), initialOwnerBalance);
+    }
+
     // ============ Meta-Transaction Tests ============
     function testMetaTxExecuteStrategy() public {
         vm.createSelectFork("https://polygon-rpc.com");
         require(block.number > 40000000, "Fork not working properly");
         
         uint256 ownerKey = 0x12345;
-        ProxyAccount mainnetProxy = _deployMainnetProxy(vm.addr(ownerKey));
-        StrategyExecutor mainnetStrategy = _deployMainnetStrategy(address(mainnetProxy));
+        address owner = vm.addr(ownerKey);
+        
+        StrategyExecutor mainnetStrategy = new StrategyExecutor(
+            POLYGON_USDT, POLYGON_USDC,
+            POLYGON_AAVE_POOL, POLYGON_UNISWAP_ROUTER
+        );
+        
+        ProxyAccount mainnetProxy = new ProxyAccount(
+            owner, address(mainnetStrategy), PAPAYA, address(0), 0,
+            POLYGON_USDT, POLYGON_USDC, POLYGON_AAVE_POOL,
+            POLYGON_AUSDT, POLYGON_AUSDC, POLYGON_UNISWAP_ROUTER
+        );
         
         _setupMainnetProxyWithTokens(mainnetProxy, mainnetStrategy, ownerKey);
         
@@ -207,45 +262,111 @@ contract ProxyAccountTest is Test {
         assertGt(IERC20(POLYGON_AUSDT).balanceOf(address(mainnetProxy)), 0);
     }
 
+    function testRevertsWhenMetaTxDeadlineExpired() public {
+        uint256 ownerKey = 0x12345;
+        address owner = vm.addr(ownerKey);
+        
+        ProxyAccount testProxy = new ProxyAccount(
+            owner, address(sharedStrategy), address(0), address(0), 0,
+            address(mockUSDT), address(mockUSDC), address(mockAavePool),
+            address(mockAUSDT), address(mockAUSDC), address(mockUniswapRouter)
+        );
+        
+        bytes memory data = abi.encodeWithSignature("claim()");
+        uint256 expiredDeadline = block.timestamp - 1;
+        
+        vm.expectRevert("ProxyAccount: meta-transaction expired");
+        testProxy.executeMetaTx(data, hex"", expiredDeadline);
+    }
+
     // ============ Mainnet Integration Tests ============
-    function testMainnetIntegrationStrategy() public {
+    function testMainnetIntegrationWithSharedStrategy() public {
         vm.createSelectFork("https://polygon-rpc.com");
         require(block.number > 40000000, "Fork not working properly");
         
-        ProxyAccount mainnetProxy = _deployMainnetProxy(address(this));
-        StrategyExecutor mainnetStrategy = _deployMainnetStrategy(address(mainnetProxy));
+        // Deploy shared strategy executor
+        StrategyExecutor mainnetStrategy = new StrategyExecutor(
+            POLYGON_USDT, POLYGON_USDC,
+            POLYGON_AAVE_POOL, POLYGON_UNISWAP_ROUTER
+        );
+        
+        // Deploy proxy with shared strategy
+        ProxyAccount mainnetProxy = new ProxyAccount(
+            address(this), address(mainnetStrategy), PAPAYA, address(0), 0,
+            POLYGON_USDT, POLYGON_USDC, POLYGON_AAVE_POOL,
+            POLYGON_AUSDT, POLYGON_AUSDC, POLYGON_UNISWAP_ROUTER
+        );
         
         _testFullMainnetFlow(mainnetProxy, mainnetStrategy);
     }
 
-    function testMainnetFeeCollection() public {
+    function testMainnetFeeCollectionWithSharedStrategy() public {
         vm.createSelectFork("https://polygon-rpc.com");
         require(block.number > 40000000, "Fork not working properly");
         
         address feeRecipient = address(0x7bfc84257b6D818c4e49Eeb7B9422569154EE5a6);
         
+        // Deploy shared strategy executor
+        StrategyExecutor sharedFeeStrategy = new StrategyExecutor(
+            POLYGON_USDT, POLYGON_USDC,
+            POLYGON_AAVE_POOL, POLYGON_UNISWAP_ROUTER
+        );
+        
         ProxyAccount feeProxy = new ProxyAccount(
-            address(this), address(0), PAPAYA, feeRecipient, 100, // 1% fee
+            address(this), address(sharedFeeStrategy), PAPAYA, feeRecipient, 100, // 1% fee
             POLYGON_USDT, POLYGON_USDC, POLYGON_AAVE_POOL,
             POLYGON_AUSDT, POLYGON_AUSDC, POLYGON_UNISWAP_ROUTER
         );
         
-        StrategyExecutor feeStrategy = new StrategyExecutor(
-            address(feeProxy), POLYGON_USDT, POLYGON_USDC,
-            POLYGON_AAVE_POOL, POLYGON_UNISWAP_ROUTER
-        );
-        
         deal(POLYGON_USDT, address(feeProxy), TEST_AMOUNT);
-        feeProxy.approveToken(POLYGON_USDT, address(feeStrategy), TEST_AMOUNT);
+        feeProxy.approveToken(POLYGON_USDT, address(sharedFeeStrategy), TEST_AMOUNT);
         
         uint256 feeBefore = IERC20(POLYGON_USDT).balanceOf(feeRecipient);
         
-        feeProxy.runStrategy(address(feeStrategy), TEST_AMOUNT);
+        feeProxy.runStrategy(address(sharedFeeStrategy), TEST_AMOUNT);
         
         uint256 feeAfter = IERC20(POLYGON_USDT).balanceOf(feeRecipient);
         uint256 expectedFee = TEST_AMOUNT * 100 / 10000; // 1%
         
         assertEq(feeAfter - feeBefore, expectedFee);
+    }
+
+    function testMultipleProxiesCanUseSharedStrategy() public {
+        // Create second proxy
+        ProxyAccount proxy2 = new ProxyAccount(
+            address(0x456), address(sharedStrategy), address(0), address(0), 0,
+            address(mockUSDT), address(mockUSDC), address(mockAavePool),
+            address(mockAUSDT), address(mockAUSDC), address(mockUniswapRouter)
+        );
+        
+        uint256 testAmount1 = 500 * 10**6;
+        uint256 testAmount2 = 750 * 10**6;
+        
+        // Setup both proxies with USDT
+        mockUSDT.mint(address(proxy), testAmount1);
+        mockUSDT.mint(address(proxy2), testAmount2);
+        
+        // Approve shared strategy for both
+        bytes memory approveData1 = abi.encodeWithSignature(
+            "approve(address,uint256)", address(sharedStrategy), testAmount1
+        );
+        proxy.executeStrategy(address(mockUSDT), approveData1);
+        
+        bytes memory approveData2 = abi.encodeWithSignature(
+            "approve(address,uint256)", address(sharedStrategy), testAmount2
+        );
+        vm.prank(address(0x456));
+        proxy2.executeStrategy(address(mockUSDT), approveData2);
+        
+        // Both proxies can use the shared strategy
+        proxy.runStrategy(address(sharedStrategy), testAmount1);
+        
+        vm.prank(address(0x456));
+        proxy2.runStrategy(address(sharedStrategy), testAmount2);
+        
+        // Verify both worked
+        assertEq(mockUSDT.balanceOf(address(proxy)), 0);
+        assertEq(mockUSDT.balanceOf(address(proxy2)), 0);
     }
 
     // ============ Helper Functions ============
@@ -264,21 +385,6 @@ contract ProxyAccountTest is Test {
         mockAavePool.setWithdrawalAmount(address(mockUSDC), aUsdcAmount);
         mockAavePool.setATokenMapping(address(mockUSDT), address(mockAUSDT));
         mockAavePool.setATokenMapping(address(mockUSDC), address(mockAUSDC));
-    }
-
-    function _deployMainnetProxy(address owner) internal returns (ProxyAccount) {
-        return new ProxyAccount(
-            owner, address(0), PAPAYA, address(0), 0,
-            POLYGON_USDT, POLYGON_USDC, POLYGON_AAVE_POOL,
-            POLYGON_AUSDT, POLYGON_AUSDC, POLYGON_UNISWAP_ROUTER
-        );
-    }
-
-    function _deployMainnetStrategy(address proxyAddr) internal returns (StrategyExecutor) {
-        return new StrategyExecutor(
-            proxyAddr, POLYGON_USDT, POLYGON_USDC,
-            POLYGON_AAVE_POOL, POLYGON_UNISWAP_ROUTER
-        );
     }
 
     function _setupMainnetProxyWithTokens(
@@ -318,7 +424,7 @@ contract ProxyAccountTest is Test {
         uint256 proxyUsdtBalance = IERC20(POLYGON_USDT).balanceOf(address(mainnetProxy));
         assertGt(proxyUsdtBalance, 0);
         
-        // Approve and run strategy
+        // Approve and run strategy with shared executor
         mainnetProxy.approveToken(POLYGON_USDT, address(mainnetStrategy), proxyUsdtBalance);
         mainnetProxy.runStrategy(address(mainnetStrategy), proxyUsdtBalance);
         
@@ -334,6 +440,10 @@ contract ProxyAccountTest is Test {
         
         assertGt(finalOwnerBalance, initialOwnerBalance);
     }
+
+    // ============ Events ============
+    event StrategyExecuted(address indexed proxy, uint256 usdtAmount, uint256 usdcAmount);
+    event ClaimExecuted(uint256 usdtAmount, uint256 usdcAmount);
 }
 
 // ============ Mock Contracts ============
