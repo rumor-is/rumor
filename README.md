@@ -2,9 +2,6 @@
 <br>
 <br>
 
-> This repository contains a **demo strategy implementation** used on [rumor.fi](https://rumor.fi/).  
-> Connect your wallet on the site to try the **50/50 split** demo <em>(USDT → 50% lend as USDT on Aave, 50% swap to USDC → lend on Aave)</em>. The demo showcases the execution flow and UX we’re building toward.
-<br>
 <h3>TL;DR</h3>
 <p>
   <strong>Rumor</strong> is a no-code DeFi strategy builder that turns complex, multi-step crypto
@@ -175,6 +172,11 @@
   Issues and PRs are welcome. If you’re integrating a protocol adapter or proposing a strategy template, please open an issue with
   the target chain, contracts and risk notes.
 </p>
+<br>
+
+> This repository contains a **demo strategy implementation** used on [rumor.fi](https://rumor.fi/).  
+> Connect your wallet on the site to try the **50/50 split** demo <em>(USDT → 50% lend as USDT on Aave, 50% swap to USDC → lend on Aave)</em>. The demo showcases the execution flow and UX we’re building toward.
+<br>
 <br>
 
 <h3>- security &amp; disclaimer</h3>
